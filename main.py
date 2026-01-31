@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-import seaborn as sns
-from math import pi
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import os
 from functools import lru_cache
 from prophet import Prophet
@@ -217,36 +216,61 @@ def main():
                 lang_name = lang.replace('_songs', '')
                 language_counts[lang_name] = len(df)
             
-            language_counts = dict(sorted(language_counts.items(), key=lambda item: item[1], reverse=False))
+            total_songs = sum(language_counts.values())
+            if total_songs > 0:
+                grouped_counts = {}
+                other_count = 0
+                for lang_name, count in language_counts.items():
+                    if (count / total_songs) * 100 < 2.5:
+                        other_count += count
+                    else:
+                        grouped_counts[lang_name] = count
+
+                if other_count > 0:
+                    grouped_counts['Other'] = other_count
+            else:
+                grouped_counts = language_counts
+
+            language_counts = dict(sorted(grouped_counts.items(), key=lambda item: item[1], reverse=False))
+            if 'Other' in language_counts:
+                other_value = language_counts.pop('Other')
+                language_counts['Other'] = other_value
             
-            fig, ax = plt.subplots(figsize=(10, 6))
-            colors = sns.color_palette('husl', len(language_counts))
-            wedges, texts, autotexts = ax.pie(
-                language_counts.values(), 
-                labels=language_counts.keys(),
-                autopct='%1.1f%%',
-                startangle=90,
-                colors=colors,
-                textprops={'fontsize': 9}
+            fig = go.Figure(data=[go.Pie(
+                labels=list(language_counts.keys()),
+                values=list(language_counts.values()),
+                textposition='auto',
+                textinfo='label+percent',
+                hovertemplate='%{label}<br>Songs: %{value}<br>Percentage: %{percent}<extra></extra>'
+            )])
+            
+            fig.update_layout(
+                title='Language Distribution Across All Songs',
+                height=500,
+                showlegend=True
             )
-            
-            for autotext in autotexts:
-                autotext.set_color('white')
-                autotext.set_fontweight('light')
-            
-            ax.set_title('Language Distribution Across All Songs', fontsize=12, fontweight='light')
-            st.pyplot(fig, width='content')
+            st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             st.subheader("Language Count")
             lang_df = pd.DataFrame(list(language_counts.items()), columns=['Language', 'Songs'])
             lang_df = lang_df.sort_values('Songs', ascending=True)
             
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.barh(lang_df['Language'], lang_df['Songs'], color=sns.color_palette('viridis', len(lang_df)))
-            ax.set_xlabel('Number of Songs')
-            ax.set_title('Songs per Language')
-            st.pyplot(fig, width='content')
+            fig = go.Figure(data=[go.Bar(
+                y=lang_df['Language'],
+                x=lang_df['Songs'],
+                orientation='h',
+                marker=dict(color=lang_df['Songs'], colorscale='Viridis'),
+                hovertemplate='%{y}<br>Songs: %{x}<extra></extra>'
+            )])
+            
+            fig.update_layout(
+                title='Songs per Language',
+                xaxis_title='Number of Songs',
+                height=500,
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
     
     # ============ ARTISTS & LANGUAGE PAGE ============
     elif page == "🎤 Artists & Language":
@@ -280,14 +304,25 @@ def main():
             pivot_df = rank_df.pivot(index='language', columns='artist', values='popularity').fillna(0)
             pivot_df = pivot_df.loc[pivot_df.sum(axis=1).sort_values(ascending=False).index]
             
-            fig, ax = plt.subplots(figsize=(14, 8))
-            pivot_df.plot(kind='barh', stacked=True, ax=ax, colormap='viridis')
-            ax.set_title(f'Top {top_n} Artists per Language (by Popularity)', fontsize=12, fontweight='bold')
-            ax.set_xlabel('Popularity Score')
-            ax.set_ylabel('Language')
-            ax.legend(title='Artist', bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
-            plt.tight_layout()
-            st.pyplot(fig, width='content')
+            fig = go.Figure()
+            for artist in pivot_df.columns:
+                fig.add_trace(go.Bar(
+                    y=pivot_df.index,
+                    x=pivot_df[artist],
+                    name=artist,
+                    orientation='h',
+                    hovertemplate='%{y}<br>' + artist + '<br>Popularity: %{x:.2f}<extra></extra>'
+                ))
+            
+            fig.update_layout(
+                title=f'Top {top_n} Artists per Language (by Popularity)',
+                xaxis_title='Popularity Score',
+                yaxis_title='Language',
+                barmode='stack',
+                height=600,
+                legend=dict(title='Artist', orientation='v')
+            )
+            st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("---")
         
@@ -314,7 +349,7 @@ def main():
             default=[list(language_dfs.keys())[0].replace('_songs', '')])
         
         if selected_langs:
-            fig, ax = plt.subplots(figsize=(14, 7))
+            fig = go.Figure()
             
             for lang, df in sorted(language_dfs.items()):
                 lang_display = lang.replace('_songs', '')
@@ -328,16 +363,25 @@ def main():
                 df_clean['year'] = df_clean['released_date'].dt.year
                 yearly_popularity = df_clean.groupby('year', as_index=False)['Stream'].mean()
                 
-                ax.plot(yearly_popularity['year'], yearly_popularity['Stream'], 
-                       marker='o', linewidth=2.5, label=lang_display, markersize=6)
+                fig.add_trace(go.Scatter(
+                    x=yearly_popularity['year'],
+                    y=yearly_popularity['Stream'],
+                    mode='lines+markers',
+                    name=lang_display,
+                    line=dict(width=2.5),
+                    marker=dict(size=8),
+                    hovertemplate='Year: %{x}<br>Avg Streams: %{y:.2f}<extra></extra>'
+                ))
             
-            ax.set_xlabel('Year', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Average Streams', fontsize=12, fontweight='bold')
-            ax.set_title('Stream Trends Over Time by Language', fontsize=14, fontweight='bold')
-            ax.legend(loc='best', fontsize=10)
-            ax.grid(True, alpha=0.3)
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
+            fig.update_layout(
+                title='Stream Trends Over Time by Language',
+                xaxis_title='Year',
+                yaxis_title='Average Streams',
+                height=600,
+                hovermode='x unified',
+                legend=dict(orientation='v')
+            )
+            st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("---")
         
@@ -385,30 +429,34 @@ def main():
                     num_songs = min(3, len(top_3_songs))
                     cols = st.columns(num_songs)
                     
-                    num_vars = len(audio_features)
-                    angles = [n / float(num_vars) * 2 * pi for n in range(num_vars)]
-                    angles += angles[:1]
-                    
                     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
                     
                     for col_idx, (col, (_, song)) in enumerate(zip(cols, top_3_songs.iterrows())):
                         with col:
-                            fig = plt.figure(figsize=(5, 5))
-                            ax = fig.add_subplot(111, projection='polar')
-                            
                             values = song[audio_features].tolist()
-                            values += values[:1]
                             
-                            ax.plot(angles, values, 'o-', linewidth=2, color=colors[col_idx])
-                            ax.fill(angles, values, alpha=0.25, color=colors[col_idx])
+                            fig = go.Figure()
+                            fig.add_trace(go.Scatterpolar(
+                                r=values,
+                                theta=audio_features,
+                                fill='toself',
+                                fillcolor=colors[col_idx],
+                                line=dict(color=colors[col_idx], width=2),
+                                marker=dict(size=8),
+                                opacity=0.7,
+                                hovertemplate='%{theta}<br>Value: %{r:.3f}<extra></extra>'
+                            ))
                             
-                            ax.set_xticks(angles[:-1])
-                            ax.set_xticklabels(audio_features, size=8)
-                            ax.set_ylim(0, 1)
-                            ax.set_title(f"#{col_idx + 1}: {song['song_name'][:25]}", size=10, fontweight='bold', pad=15)
-                            ax.grid(True)
+                            fig.update_layout(
+                                polar=dict(
+                                    radialaxis=dict(visible=True, range=[0, 1])
+                                ),
+                                title=f"#{col_idx + 1}: {song['song_name'][:25]}",
+                                height=400,
+                                showlegend=False
+                            )
                             
-                            st.pyplot(fig, width='content')
+                            st.plotly_chart(fig, use_container_width=True)
     
     # ============ DETAILED ANALYSIS PAGE ============
     elif page == "📉 Detailed Analysis":
@@ -417,65 +465,79 @@ def main():
         # Popularity vs Streams Analysis
         st.subheader("Popularity vs Streams Correlation Analysis")
         
-        colors = sns.color_palette('bright', len(language_stats))
-
         # Create bubble sizes
-        bubble_sizes = (language_stats['total_streams'] / language_stats['total_streams'].max()) * 1000
+        bubble_sizes = (language_stats['total_streams'] / language_stats['total_streams'].max()) * 100
 
-        # Create scatter plot with colors
-        for idx, row in language_stats.iterrows():
-            plt.scatter(row['avg_popularity'], 
-                    row['avg_streams'],
-                    s=bubble_sizes.iloc[idx], 
-                    alpha=0.3, 
-                    color=colors[idx],
-                    edgecolors='black', 
-                    linewidth=2)
+        fig = go.Figure()
         
-        legend_elements = [Patch(facecolor=colors[idx], edgecolor='black', label=row['language']) 
-                        for idx, row in language_stats.iterrows()]
-
-        plt.xlabel('Average Popularity', fontsize=13, fontweight='light')
-        plt.ylabel('Average Streams', fontsize=13, fontweight='light')
-        plt.title('Language Comparison: Popularity vs Streams\n(Bubble Size = Total Streams)', 
-                fontsize=15, fontweight='light')
-        plt.grid(True, alpha=0.3)
-        plt.legend(handles=legend_elements, title='Language', bbox_to_anchor=(1.05, 1), 
-                loc='upper left', fontsize=10, title_fontsize=11, frameon=True, shadow=True)
-        plt.tight_layout()
-        st.pyplot(plt.gcf(), width='content')
+        for idx, row in language_stats.iterrows():
+            fig.add_trace(go.Scatter(
+                x=[row['avg_popularity']],
+                y=[row['avg_streams']],
+                mode='markers',
+                name=row['language'],
+                marker=dict(
+                    size=bubble_sizes.iloc[idx],
+                    sizemode='area',
+                    line=dict(width=2, color='black'),
+                    opacity=0.6
+                ),
+                hovertemplate=row['language'] + '<br>Avg Popularity: %{x:.2f}<br>Avg Streams: %{y:.2f}<br>Total Streams: ' + f"{row['total_streams']:.0f}" + '<extra></extra>'
+            ))
+        
+        fig.update_layout(
+            title='Language Comparison: Popularity vs Streams<br>(Bubble Size = Total Streams)',
+            xaxis_title='Average Popularity',
+            yaxis_title='Average Streams',
+            height=600,
+            hovermode='closest',
+            legend=dict(title='Language', orientation='v')
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("---")
         
         # Dual axis chart
         st.subheader("Total Popularity vs Total Streams by Language")
         
-        fig, ax = plt.subplots(figsize=(14, 6))
-        x = range(len(language_stats))
-        width = 0.4
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
         
-        bars1 = ax.bar([i - width/2 for i in x], language_stats['total_popularity'], 
-                      width, label='Total Popularity', alpha=0.8, color='skyblue')
+        fig.add_trace(
+            go.Bar(
+                x=language_stats['language'],
+                y=language_stats['total_popularity'],
+                name='Total Popularity',
+                marker_color='skyblue',
+                opacity=0.8,
+                hovertemplate='%{x}<br>Total Popularity: %{y:.2f}<extra></extra>'
+            ),
+            secondary_y=False
+        )
         
-        ax2 = ax.twinx()
-        bars2 = ax2.bar([i + width/2 for i in x], language_stats['total_streams'], 
-                       width, label='Total Streams', alpha=0.8, color='coral')
+        fig.add_trace(
+            go.Bar(
+                x=language_stats['language'],
+                y=language_stats['total_streams'],
+                name='Total Streams',
+                marker_color='coral',
+                opacity=0.8,
+                hovertemplate='%{x}<br>Total Streams: %{y:.2f}<extra></extra>'
+            ),
+            secondary_y=True
+        )
         
-        ax.set_xlabel('Language', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Total Popularity', fontsize=12, fontweight='bold', color='skyblue')
-        ax2.set_ylabel('Total Streams', fontsize=12, fontweight='bold', color='coral')
-        ax.set_title('Total Popularity vs Total Streams by Language', fontsize=14, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels(language_stats['language'], rotation=45, ha='right')
-        ax.tick_params(axis='y', labelcolor='skyblue')
-        ax2.tick_params(axis='y', labelcolor='coral')
-        ax.grid(True, alpha=0.3, axis='y')
+        fig.update_layout(
+            title='Total Popularity vs Total Streams by Language',
+            height=600,
+            hovermode='x unified',
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+        )
         
-        ax.legend(loc='upper left')
-        ax2.legend(loc='upper right')
+        fig.update_xaxes(title_text='Language', tickangle=-45)
+        fig.update_yaxes(title_text='Total Popularity', secondary_y=False, color='skyblue')
+        fig.update_yaxes(title_text='Total Streams', secondary_y=True, color='coral')
         
-        plt.tight_layout()
-        st.pyplot(fig, width='content')
+        st.plotly_chart(fig, use_container_width=True)
         
         st.markdown("---")
         
@@ -518,61 +580,62 @@ def main():
             st.error("No forecast data available. Ensure data files have sufficient historical data.")
             return
         
-        # ===== FORECAST SUMMARY TABLE =====
-        st.subheader("📊 Forecast Summary (Next 3 Years)")
-        
         summary_data = []
         for lang, forecast in forecasts.items():
-            last_actual_date = models_info[lang]['last_date']
+            last_actual_date = language_data[lang]['ds'].max()
             future_forecast = forecast[forecast['ds'] > last_actual_date]
             
-            if len(future_forecast) > 0:
-                avg_popularity = future_forecast['yhat'].mean()
-                min_popularity = future_forecast['yhat'].min()
-                max_popularity = future_forecast['yhat'].max()
-                trend = future_forecast['yhat'].iloc[-1] - future_forecast['yhat'].iloc[0]
-                
-                summary_data.append({
-                    'Language': lang,
-                    'Avg Predicted Popularity': round(avg_popularity, 2),
-                    'Min Predicted': round(min_popularity, 2),
-                    'Max Predicted': round(max_popularity, 2),
-                    'Overall Trend': round(trend, 2),
-                    'Trend Direction': '📈 Increasing' if trend > 0 else '📉 Decreasing'
-                })
-        
+            # Calculate statistics for the forecast period
+            avg_popularity = future_forecast['yhat'].mean()
+            min_popularity = future_forecast['yhat'].min()
+            max_popularity = future_forecast['yhat'].max()
+            trend = future_forecast['yhat'].iloc[-1] - future_forecast['yhat'].iloc[0]
+            
+            summary_data.append({
+                'Language': lang,
+                'Avg Predicted Popularity': round(avg_popularity, 2),
+                'Min Predicted': round(min_popularity, 2),
+                'Max Predicted': round(max_popularity, 2),
+                'Overall Trend': round(trend, 2),
+                'Trend Direction': 'Increasing' if trend > 0 else 'Decreasing'
+            })
+
         summary_df = pd.DataFrame(summary_data)
         summary_df = summary_df.sort_values('Avg Predicted Popularity', ascending=False)
-        
-        st.dataframe(summary_df, use_container_width=True)
-        
-        st.markdown("---")
-        
+                
+
         # ===== TREND DIRECTION VISUALIZATION =====
         col1, col2 = st.columns([1.5, 1])
         
         with col1:
             st.subheader("📊 Popularity Trend Direction (2026-2029)")
             
-            fig, ax = plt.subplots(figsize=(10, 6))
             trend_colors = ['green' if x > 0 else 'red' for x in summary_df['Overall Trend']]
-            bars = ax.barh(summary_df['Language'], summary_df['Overall Trend'], 
-                          color=trend_colors, edgecolor='black', linewidth=1.5, alpha=0.7)
             
-            for idx, (bar, trend) in enumerate(zip(bars, summary_df['Overall Trend'])):
-                width = bar.get_width()
-                ax.text(width + (0.5 if width > 0 else -0.5), bar.get_y() + bar.get_height()/2.,
-                       f'{trend:.2f}',
-                       ha='left' if width > 0 else 'right', 
-                       va='center', fontsize=10, fontweight='bold')
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                y=summary_df['Language'],
+                x=summary_df['Overall Trend'],
+                orientation='h',
+                marker=dict(
+                    color=trend_colors,
+                    line=dict(color='black', width=1.5)
+                ),
+                text=summary_df['Overall Trend'].apply(lambda x: f'{x:.2f}'),
+                textposition='outside',
+                hovertemplate='%{y}<br>Trend: %{x:.2f}<extra></extra>'
+            ))
             
-            ax.axvline(x=0, color='black', linewidth=2)
-            ax.set_xlabel('Trend (Change in Popularity)', fontsize=12, fontweight='bold')
-            ax.set_ylabel('Language', fontsize=12, fontweight='bold')
-            ax.set_title('Popularity Trend Direction', fontsize=13, fontweight='bold')
-            ax.grid(axis='x', alpha=0.3)
-            plt.tight_layout()
-            st.pyplot(fig, use_container_width=True)
+            fig.add_vline(x=0, line_width=2, line_color='black')
+            
+            fig.update_layout(
+                title='Popularity Trend Direction',
+                xaxis_title='Trend (Change in Popularity)',
+                yaxis_title='Language',
+                height=500,
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             st.subheader("📈 Key Insights")
@@ -602,24 +665,36 @@ def main():
         # ===== AVERAGE PREDICTED POPULARITY BAR CHART =====
         st.subheader("📊 Average Predicted Popularity by Language (2026-2029)")
         
-        fig, ax = plt.subplots(figsize=(14, 6))
-        colors_bar = plt.cm.viridis(np.linspace(0, 1, len(summary_df)))
-        bars = ax.bar(summary_df['Language'], summary_df['Avg Predicted Popularity'], 
-                     color=colors_bar, edgecolor='black', linewidth=1.5, alpha=0.8)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=summary_df['Language'],
+            y=summary_df['Avg Predicted Popularity'],
+            marker=dict(
+                color=summary_df['Avg Predicted Popularity'],
+                colorscale='Viridis',
+                line=dict(color='black', width=1.5)
+            ),
+            text=summary_df['Avg Predicted Popularity'].apply(lambda x: f'{x:.1f}'),
+            textposition='outside',
+            hovertemplate='%{x}<br>Avg Popularity: %{y:.2f}<extra></extra>'
+        ))
         
-        for bar in bars:
-            height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{height:.1f}',
-                   ha='center', va='bottom', fontsize=11, fontweight='bold')
+        fig.update_layout(
+            title='Average Predicted Popularity Score by Language',
+            xaxis_title='Language',
+            yaxis_title='Average Popularity Score',
+            height=600,
+            showlegend=False,
+            xaxis=dict(tickangle=-45)
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
-        ax.set_title('Average Predicted Popularity Score by Language', fontsize=14, fontweight='bold', pad=15)
-        ax.set_xlabel('Language', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Average Popularity Score', fontsize=12, fontweight='bold')
-        ax.set_xticklabels(summary_df['Language'], rotation=45, ha='right')
-        ax.grid(axis='y', alpha=0.3, linestyle='--')
-        plt.tight_layout()
-        st.pyplot(fig, use_container_width=True)
+        st.markdown("---")
+        
+        # ===== FORECAST SUMMARY TABLE =====
+        st.subheader("📊 Forecast Summary (Next 3 Years)")
+        
+        st.dataframe(summary_df, use_container_width=True)
         
         st.markdown("---")
         
@@ -642,43 +717,120 @@ def main():
                 actual_data = language_data[lang]
                 last_actual_date = models_info[lang]['last_date']
                 
+                # Convert to Python datetime to avoid Timestamp issues with Plotly
+                last_actual_date_dt = pd.to_datetime(last_actual_date).to_pydatetime()
+                
                 # Split forecast
                 historical = forecast[forecast['ds'] <= last_actual_date]
                 future = forecast[forecast['ds'] > last_actual_date]
                 
-                fig, ax = plt.subplots(figsize=(14, 6))
+                fig = go.Figure()
                 
                 # Plot actual data
-                ax.scatter(actual_data['ds'], actual_data['y'], 
-                          color='black', s=30, alpha=0.6, label='Actual Data', zorder=3)
+                fig.add_trace(go.Scatter(
+                    x=actual_data['ds'],
+                    y=actual_data['y'],
+                    mode='markers',
+                    name='Actual Data',
+                    marker=dict(color='black', size=8, opacity=0.6),
+                    hovertemplate='Date: %{x}<br>Popularity: %{y:.2f}<extra></extra>'
+                ))
                 
-                # Plot historical forecast
-                ax.plot(historical['ds'], historical['yhat'], 
-                       color='blue', linewidth=2.5, label='Historical Fit', alpha=0.8)
-                ax.fill_between(historical['ds'], 
-                               historical['yhat_lower'], 
-                               historical['yhat_upper'],
-                               alpha=0.2, color='blue', label='Confidence Interval (Historical)')
+                # Plot historical forecast confidence interval
+                fig.add_trace(go.Scatter(
+                    x=historical['ds'],
+                    y=historical['yhat_upper'],
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                fig.add_trace(go.Scatter(
+                    x=historical['ds'],
+                    y=historical['yhat_lower'],
+                    mode='lines',
+                    line=dict(width=0),
+                    fillcolor='rgba(0, 0, 255, 0.2)',
+                    fill='tonexty',
+                    name='Confidence Interval (Historical)',
+                    hoverinfo='skip'
+                ))
                 
-                # Plot future forecast
-                ax.plot(future['ds'], future['yhat'], 
-                       color='red', linewidth=2.5, linestyle='--', label='Future Forecast', alpha=0.9)
-                ax.fill_between(future['ds'], 
-                               future['yhat_lower'], 
-                               future['yhat_upper'],
-                               alpha=0.2, color='red', label='Confidence Interval (Future)')
+                # Plot historical forecast line
+                fig.add_trace(go.Scatter(
+                    x=historical['ds'],
+                    y=historical['yhat'],
+                    mode='lines',
+                    name='Historical Fit',
+                    line=dict(color='blue', width=2.5),
+                    hovertemplate='Date: %{x}<br>Fitted: %{y:.2f}<extra></extra>'
+                ))
                 
-                # Add vertical line at prediction start
-                ax.axvline(x=last_actual_date, color='green', 
-                          linestyle=':', linewidth=2.5, label='Forecast Start', alpha=0.7)
+                # Plot future forecast confidence interval
+                fig.add_trace(go.Scatter(
+                    x=future['ds'],
+                    y=future['yhat_upper'],
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                fig.add_trace(go.Scatter(
+                    x=future['ds'],
+                    y=future['yhat_lower'],
+                    mode='lines',
+                    line=dict(width=0),
+                    fillcolor='rgba(255, 0, 0, 0.2)',
+                    fill='tonexty',
+                    name='Confidence Interval (Future)',
+                    hoverinfo='skip'
+                ))
                 
-                ax.set_title(f'{lang} - Popularity Forecast (Next 3 Years)', fontsize=14, fontweight='bold', pad=15)
-                ax.set_xlabel('Date', fontsize=12, fontweight='bold')
-                ax.set_ylabel('Average Popularity Score', fontsize=12, fontweight='bold')
-                ax.legend(loc='best', fontsize=10, framealpha=0.9)
-                ax.grid(True, alpha=0.3, linestyle='--')
-                plt.tight_layout()
-                st.pyplot(fig, use_container_width=True)
+                # Plot future forecast line
+                fig.add_trace(go.Scatter(
+                    x=future['ds'],
+                    y=future['yhat'],
+                    mode='lines',
+                    name='Future Forecast',
+                    line=dict(color='red', width=2.5, dash='dash'),
+                    hovertemplate='Date: %{x}<br>Forecast: %{y:.2f}<extra></extra>'
+                ))
+                
+                fig.add_shape(
+                    type="line",
+                    x0=last_actual_date_dt,
+                    x1=last_actual_date_dt,
+                    y0=0,
+                    y1=1,
+                    xref="x",
+                    yref="paper",
+                    line=dict(
+                        color="green",
+                        width=2.5,
+                        dash="dot"
+                    )
+                )
+
+                fig.add_annotation(
+                    x=last_actual_date_dt,
+                    y=1.02,
+                    xref="x",
+                    yref="paper",
+                    text="Forecast Start",
+                    showarrow=False,
+                    font=dict(color="green")
+                )
+
+                
+                fig.update_layout(
+                    title=f'{lang} - Popularity Forecast (Next 3 Years)',
+                    xaxis_title='Date',
+                    yaxis_title='Average Popularity Score',
+                    height=600,
+                    hovermode='x unified',
+                    legend=dict(orientation='v')
+                )
+                st.plotly_chart(fig, use_container_width=True)
                 
                 # Show statistics
                 col1, col2, col3, col4 = st.columns(4)

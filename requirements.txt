@@ -63,8 +63,6 @@ dvc-task==0.40.2
 entrypoints==0.4
 et_xmlfile==2.0.0
 executing==2.2.1
-# Editable install with no version control (fast-markdown-mcp==0.1.0)
--e c:\users\arnav waghdhare\devdocs\fast-markdown-mcp
 filelock==3.19.1
 flatbuffers==25.9.23
 flatten-dict==0.4.2

@@ -153,9 +153,9 @@ def main():
             
             for autotext in autotexts:
                 autotext.set_color('white')
-                autotext.set_fontweight('bold')
+                autotext.set_fontweight('light')
             
-            ax.set_title('Language Distribution Across All Songs', fontsize=12, fontweight='bold')
+            ax.set_title('Language Distribution Across All Songs', fontsize=12, fontweight='light')
             st.pyplot(fig, width='content')
         
         with col2:
@@ -258,7 +258,18 @@ def main():
             ax.legend(loc='best', fontsize=10)
             ax.grid(True, alpha=0.3)
             plt.tight_layout()
-            st.pyplot(fig, width='content')
+            st.pyplot(fig, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Genre trends
+        st.subheader("Genre Trends Over Time")
+        
+        # Check if genre_time.png exists
+        if os.path.exists('genre_time.png'):
+            st.image('genre_time.png', use_column_width=True, caption="Genre Distribution Trends Over Time")
+        else:
+            st.info("Genre trends visualization not available. Ensure genre_time.png is in the project directory.")
     
     # ============ AUDIO FEATURES PAGE ============
     elif page == "🎼 Audio Features":
@@ -337,7 +348,7 @@ def main():
             plt.scatter(row['avg_popularity'], 
                     row['avg_streams'],
                     s=bubble_sizes.iloc[idx], 
-                    alpha=0.6, 
+                    alpha=0.3, 
                     color=colors[idx],
                     edgecolors='black', 
                     linewidth=2)
@@ -345,10 +356,10 @@ def main():
         legend_elements = [Patch(facecolor=colors[idx], edgecolor='black', label=row['language']) 
                         for idx, row in language_stats.iterrows()]
 
-        plt.xlabel('Average Popularity', fontsize=13, fontweight='bold')
-        plt.ylabel('Average Streams', fontsize=13, fontweight='bold')
+        plt.xlabel('Average Popularity', fontsize=13, fontweight='light')
+        plt.ylabel('Average Streams', fontsize=13, fontweight='light')
         plt.title('Language Comparison: Popularity vs Streams\n(Bubble Size = Total Streams)', 
-                fontsize=15, fontweight='bold')
+                fontsize=15, fontweight='light')
         plt.grid(True, alpha=0.3)
         plt.legend(handles=legend_elements, title='Language', bbox_to_anchor=(1.05, 1), 
                 loc='upper left', fontsize=10, title_fontsize=11, frameon=True, shadow=True)
